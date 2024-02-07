@@ -8,8 +8,8 @@
 #include <freertos/task.h>
 
 //usar WPA2
-const char* ssid = "miwifi";
-const char* password = "mipassword";
+const char* ssid = "dammit4";
+const char* password = "$miwifi7445$#~13";
 const int AnalogPin = 34; //sensor humedad yl-69
 const int AnalogPin2 = 16; //led blanco
 const int AnalogPin3 = 35; //ldr
@@ -21,9 +21,9 @@ const char* bajahumedad = "Alerta: La humedad está bajo ";
 const char* altahumedad = "Alerta: La humedad está por encima de ";
 const char* unidad = " HR.";
 const char* normalhumedad = "El nivel de humedad está dentro de los parametros normales.";
-const int TapTime = 2;
-const int LedTime = 2;
-const int DelayTime = 15;
+const int TapTime = 1;
+const int LedTime = 1;
+const int DelayTime = 3;
 const int LdrDelayTime = 2;
 const int WifiTimeout = 30000;
 const int fadeAmount = 5;  // Cantidad de cambio en el brillo por iteración
@@ -37,8 +37,15 @@ const char* mqttServerEdge = "10.0.0.190";
 const int mqttPort = 8883;
 const int mqttEdgePort = 1883;
 
-bool ejecutarllave = false;
-bool ejecutarled = false;
+const char* sensoredgetopic = "edge/sensor";
+const char* llavetopic = "artifact/tap";
+const char* ldredgetopic = "edge/ldr";
+const char* ledtopic = "artifact/led";
+
+bool nuevomensajellave = false;
+bool nuevomensajeled = false;
+
+int ledmultiplicador = 2;
 
 int nivelled;
 int led_write_value;
@@ -193,8 +200,8 @@ void setup() {
   client.setCallback(callback);
 
   // Subscribe to Topic2
-  client.subscribe("artifact/tap");
-  client.subscribe("artifact/led");
+  client.subscribe(llavetopic);
+  //client.subscribe(ledtopic);
 
   //Hilos
   xTaskCreatePinnedToCore(sensorThread, "SensorThread", 8192, NULL, 1, NULL, 0); // Pinned al núcleo 0 //publish
@@ -216,21 +223,19 @@ void callback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  if (strcmp(topic, "artifact/led") == 0) {
-    if (!ejecutarled){
-      nivelled = doc["nivelled"];
-      led_write_value = 255 * (nivelled/100.0);
-      tiempoencendido = doc["tiempoencendido"];
-      ejecutarled = true;
-    }
+  if (strcmp(topic, ledtopic) == 0) {
+    //recuperamos los datos nivelled y tiempoencendido del topico
+    nivelled = doc["nivelled"];
+    led_write_value = 255 * (nivelled/100.0);
+    tiempoencendido = doc["tiempoencendido"];
+    nuevomensajeled = true;
   } 
-  else if (strcmp(topic, "artifact/tap") == 0) {
-    if (!ejecutarllave){
-      nivelllave = doc["nivelllave"];
-      llave_write_value = 255 * (nivelllave/100.0);
-      tiempoapertura = doc["tiempoapertura"];
-      ejecutarllave = true;
-    }
+  else if (strcmp(topic, llavetopic) == 0) {
+    //recuperamos los datos nivellave y tiempoapertura del topico
+    nivelllave = doc["nivelllave"];
+    llave_write_value = 255 * (nivelllave/100.0);
+    tiempoapertura = doc["tiempoapertura"];
+    nuevomensajellave = true;
   }
   else {
     Serial.println("Mensaje para un tópico no reconocido");
@@ -264,7 +269,7 @@ void sensorThread(void *parameter) {
     String jsonString;
     serializeJson(jsonDoc, jsonString);
     //Enviar el JSON
-    if (cliente_edge.publish("edge", jsonString.c_str())) {
+    if (cliente_edge.publish(sensoredgetopic, jsonString.c_str())) {
       Serial.println("Mqtt enviado correctamente.");
     } else {
       Serial.println("Error al enviar el mensaje mqtt.");
@@ -294,7 +299,7 @@ void ldrThread(void *parameter) {
     String jsonString;
     serializeJson(jsonDoc, jsonString);
     //Enviar el JSON
-    if (client.publish("sensor/ldr", jsonString.c_str())) {
+    if (client.publish(ldredgetopic, jsonString.c_str())) {
       Serial.println("JSON enviado correctamente.");
     } else {
       Serial.println("Error al enviar el JSON.");
@@ -307,15 +312,10 @@ void ldrThread(void *parameter) {
 
 void llaveThread(void *parameter) {
   while (1) {
-    if (ejecutarllave){
+    if (nuevomensajellave){
       Serial.println("Llave: abriendo la llave " + String(tiempoapertura) + " segundos a una presión de " + String(nivelllave) + " ...");
       ledcWrite(channel2, llave_write_value); // Asignar el valor a la intensidad del LED
-      //esperar tiempo de apertura
-      delay(tiempoapertura * 1000);
-      //cerrar la llave
-      Serial.println("Llave: cerrando la llave ...");
-      ledcWrite(channel2, 0); // Asignar el valor a la intensidad del LED
-      ejecutarllave = false;
+      nuevomensajellave = false;
     }
     delay(TapTime * 1000); // Esperar antes del siguiente loop
   }
@@ -323,15 +323,10 @@ void llaveThread(void *parameter) {
 
 void ledThread(void *parameter) {
   while (1) {
-    if (ejecutarled){
+    if (nuevomensajeled){
       Serial.println("LED: encendiendo el LED " + String(tiempoencendido) + " segundos a una intensidad de " + String(nivelled) + " ...");
       ledcWrite(channel, led_write_value); // Asignar el valor a la intensidad del LED
-      //esperar tiempo de apertura
-      delay(tiempoencendido * 1000);
-      //cerrar la llave
-      Serial.println("LED: apagando el LED ...");
-      ledcWrite(channel, 0); // Asignar el valor a la intensidad del LED
-      ejecutarled = false;
+      nuevomensajeled = false;
     }
     delay(LedTime * 1000); // Esperar antes del siguiente loop
   }
@@ -390,8 +385,8 @@ void reconnect() {
   while (!client.connected()) {
     if (client.connect("SensorLab")) {
       Serial.println("Conectado al servidor MQTT");
-      client.subscribe("artifact/tap");
-      //client.subscribe("artifact/led");
+      client.subscribe(llavetopic);
+      //client.subscribe(ledtopic);
     } else {
       Serial.println("Error de conexión al servidor MQTT, reintentando...");
       delay(2000);
