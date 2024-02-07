@@ -8,8 +8,8 @@
 #include <freertos/task.h>
 
 //usar WPA2
-const char* ssid = "dammit4";
-const char* password = "$miwifi7445$#~13";
+const char* ssid = "MOVISTAR_AF09";
+const char* password = "12345678";
 const int AnalogPin = 34; //sensor humedad yl-69
 const int AnalogPin2 = 16; //led blanco
 const int AnalogPin3 = 35; //ldr
@@ -32,7 +32,7 @@ const int channel2 = 1;     // Canal PWM
 const int channel3 = 2;     // Canal PWM
 
 const char* mqttServer = "a85vkpsrzp7kv-ats.iot.us-west-2.amazonaws.com";
-const char* mqttServerEdge = "10.0.0.190";
+const char* mqttServerEdge = "192.168.31.61";
 
 const int mqttPort = 8883;
 const int mqttEdgePort = 1883;
