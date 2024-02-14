@@ -25,15 +25,13 @@ const int TapTime = 1;
 const int LedTime = 1;
 const int DelayTime = 3;
 const int LdrDelayTime = 2;
-const int WifiTimeout = 30000;
+const int WifiTimeout = 30;
 const int fadeAmount = 5;  // Cantidad de cambio en el brillo por iteración
 const int channel = 0;     // Canal PWM
 const int channel2 = 1;     // Canal PWM
 const int channel3 = 2;     // Canal PWM
 
 const char* mqttServerEdge = "192.168.31.61";
-
-const int mqttPort = 8883;
 const int mqttEdgePort = 1883;
 
 const char* sensoredgetopic = "edge/sensor";
@@ -43,6 +41,7 @@ const char* lededgetopic = "edge/led";
 
 bool nuevomensajellave = false;
 bool nuevomensajeled = false;
+bool nowifiloopexe = true;
 
 int ledmultiplicador = 2;
 
@@ -65,19 +64,6 @@ void setup() {
   Serial.begin(9600);
   // Configurar conexión Wi-Fi
   WiFi.begin(ssid, password);
-
-  // Esperar hasta que se conecte a la red WiFi
-  unsigned long startAttemptTime = millis();
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Conectándose al Access Point WiFi...");
-    
-    // Si no se conecta en un tiempo determinado, detener el intento
-    if (millis() - startAttemptTime > (WifiTimeout * 1000)) { // n segundos
-      Serial.println("No se pudo conectar a la red WiFi. Reinicie y verifique la configuración.");
-      while (1); // Bucle infinito
-    }
-  }
   //Configurar Led
   pinMode(AnalogPin2, OUTPUT); // Establecer el pin del LED como salida
   ledcSetup(channel, 5000, 8); // Canal, Frecuencia, Resolución
@@ -90,18 +76,28 @@ void setup() {
   pinMode(AnalogPin6, OUTPUT); // Establecer el pin del LED como salida
   ledcSetup(channel3, 5000, 8); // Canal, Frecuencia, Resolución
   ledcAttachPin(AnalogPin6, channel3); // Asignar el pin al canal
-
+  // Esperar hasta que se conecte a la red WiFi
+  unsigned long startAttemptTime = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Conectándose al Access Point WiFi...");
+    WiFi.begin(ssid, password);
+    delay(1000);
+    // Si no se conecta en un tiempo determinado, encender las luces
+    if (millis() - startAttemptTime > (WifiTimeout * 1000)) { // n segundos
+      Serial.println("No se pudo conectar a la red WiFi. Se encenderan las luces de alarma.");
+      while (WiFi.status() != WL_CONNECTED){
+        WiFi.begin(ssid, password);
+        intermitent_lights();
+      }
+      Serial.println("Conexión a la red WiFi Recuperada!");
+    }
+  }
+  nowifiloopexe = false;
   //Confirmar conexion exitosa
   Serial.println("Conectado al Access Point WiFi");
-  //LED de Confirmacion de conexion
-  ledcWrite(channel, 255); // Asignar el valor a la intensidad del LED al maximo
-  ledcWrite(channel2, 255); // Asignar el valor a la intensidad del LED al maximo
-  ledcWrite(channel3, 255); // Asignar el valor a la intensidad del LED al maximo
-  delay(1000);
-  ledcWrite(channel, 0); // Asignar el valor a la intensidad del LED a 0
-  ledcWrite(channel2, 0); // Asignar el valor a la intensidad del LED a 0
-  ledcWrite(channel3, 125); // Asignar el valor a la intensidad del LED a 0
-
+  //Luces Intermitentes
+  intermitent_lights();
+  ledcWrite(channel3, 125); // Asignar el valor a la intensidad del LED a 125
   //Configurar NTP
   timeClient.begin();
   timeClient.setTimeOffset(-18000);
@@ -120,6 +116,18 @@ void setup() {
   //xTaskCreatePinnedToCore(ldrThread, "ldrThread", 8192, NULL, 1, NULL, 1); // Pinned al núcleo 1 //publish
   xTaskCreatePinnedToCore(llaveThread, "llaveThread", 8192, NULL, 1, NULL, 0); // Pinned al núcleo 0
   //xTaskCreatePinnedToCore(ledThread, "ledThread", 8192, NULL, 1, NULL, 1); // Pinned al núcleo 1
+}
+
+void intermitent_lights() {
+  //LED de Confirmacion de conexion
+  ledcWrite(channel, 255); // Asignar el valor a la intensidad del LED al maximo
+  ledcWrite(channel2, 255); // Asignar el valor a la intensidad del LED al maximo
+  ledcWrite(channel3, 255); // Asignar el valor a la intensidad del LED al maximo
+  delay(1000);
+  ledcWrite(channel, 0); // Asignar el valor a la intensidad del LED a 0
+  ledcWrite(channel2, 0); // Asignar el valor a la intensidad del LED a 0
+  ledcWrite(channel3, 0); // Asignar el valor a la intensidad del LED a 0
+  delay(1000);
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -283,8 +291,38 @@ String obtenerHoraActualizada(NTPClient& timeClient) {
   return formattedTime;
 }
 
+void reconnectWiFi() {
+  Serial.println("Perdida de conexión WiFi. Intentando reconectar...");
+  WiFi.begin(ssid, password);
+
+  unsigned long startAttemptTime = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    WiFi.begin(ssid, password);
+    Serial.println("Conectándose al Access Point WiFi...");
+    delay(1000);
+    // Si no se conecta en un tiempo determinado, mostrar alerta
+    if (millis() - startAttemptTime > (WifiTimeout * 1000)) { // n segundos
+      Serial.println("No se pudo conectar a la red WiFi. Se encenderan las luces de alarma.");
+      while (WiFi.status() != WL_CONNECTED){
+        WiFi.begin(ssid, password);
+        intermitent_lights();
+      }
+      Serial.println("Conexión a la red WiFi Recuperada!");
+    }
+  }
+  Serial.println("Reconexión exitosa al WiFi");
+  ledcWrite(channel, 0); // Asignar el valor a la intensidad del LED a 0
+  ledcWrite(channel2, 0); // Asignar el valor a la intensidad del LED a 0
+  ledcWrite(channel3, 0); // Asignar el valor a la intensidad del LED a 0
+  ledcWrite(channel3, 125); // Asignar el valor a la intensidad del LED a 125
+}
+
 void loop() {
-  // Obtener el timestamp actualizado
+   //Obtener el timestamp actualizado
+  if (!WiFi.isConnected() && !nowifiloopexe) {
+    reconnectWiFi();
+  }
+
   if (!cliente_edge.connected()) {
     reconnect_edge();
   }
